@@ -1,0 +1,10 @@
+{
+  "name": "k8s-rbac-attackgraph",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+  "postCreateCommand": "pip install -r requirements.txt",
+  "postAttachCommand": "python -m rbacgraph.web",
+  "forwardPorts": [5000],
+  "portsAttributes": {
+    "5000": { "label": "Dashboard", "onAutoForward": "openBrowser" }
+  }
+}
