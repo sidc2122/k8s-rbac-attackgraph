@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kubernetes RBAC Attack-Path Analyzer</title>
+<style>
+  :root{
+    --bg:#0f1420; --panel:#ffffff; --ink:#1a2233; --muted:#6b7688;
+    --line:#e4e8ef; --brand:#2f6df6; --brand-d:#1f52c9;
+    --crit:#d5333f; --high:#e8792b; --med:#e0b020; --low:#7b8698;
+    --good:#1f9d55;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;
+    background:#f2f4f8;color:var(--ink)}
+  header{background:var(--bg);color:#fff;padding:22px 28px}
+  header h1{margin:0;font-size:20px;font-weight:650;letter-spacing:.2px}
+  header p{margin:4px 0 0;color:#9fb0cc;font-size:13px}
+  .wrap{max-width:960px;margin:0 auto;padding:24px 20px 60px}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:20px;margin-bottom:20px;box-shadow:0 1px 2px rgba(20,30,50,.04)}
+
+  .tabs{display:flex;gap:8px;margin-bottom:16px}
+  .tab{flex:1;padding:12px;border:1px solid var(--line);border-radius:10px;
+    background:#f7f9fc;cursor:pointer;text-align:center;font-weight:600;color:var(--muted)}
+  .tab.active{background:var(--brand);color:#fff;border-color:var(--brand)}
+
+  label{display:block;font-size:13px;font-weight:600;margin:0 0 6px;color:var(--muted)}
+  select,input[type=file]{width:100%;padding:11px;border:1px solid var(--line);
+    border-radius:9px;font-size:14px;background:#fff}
+  .drop{border:2px dashed var(--line);border-radius:10px;padding:26px;text-align:center;
+    color:var(--muted);cursor:pointer;background:#fafbfe}
+  .drop.hover{border-color:var(--brand);background:#eef4ff;color:var(--brand)}
+  .row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:14px}
+  .chk{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-weight:500}
+
+  button.scan{background:var(--brand);color:#fff;border:0;border-radius:9px;
+    padding:12px 22px;font-size:15px;font-weight:650;cursor:pointer}
+  button.scan:hover{background:var(--brand-d)}
+  button.scan:disabled{opacity:.5;cursor:default}
+
+  .summary{display:flex;gap:24px;flex-wrap:wrap;margin-bottom:6px}
+  .stat{font-size:13px;color:var(--muted)}
+  .stat b{display:block;font-size:24px;color:var(--ink);font-weight:700}
+
+  .pathcard{border:1px solid var(--line);border-left-width:6px;border-radius:10px;
+    padding:16px 18px;margin-top:14px;background:#fff}
+  .pathcard.CRITICAL{border-left-color:var(--crit)}
+  .pathcard.HIGH{border-left-color:var(--high)}
+  .pathcard.MEDIUM{border-left-color:var(--med)}
+  .pathcard.LOW{border-left-color:var(--low)}
+  .badge{display:inline-block;padding:3px 10px;border-radius:20px;color:#fff;
+    font-size:12px;font-weight:700;letter-spacing:.4px}
+  .badge.CRITICAL{background:var(--crit)} .badge.HIGH{background:var(--high)}
+  .badge.MEDIUM{background:var(--med)} .badge.LOW{background:var(--low)}
+  .pathhead{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .risk{margin-left:auto;font-size:13px;color:var(--muted)}
+  .risk b{color:var(--ink);font-size:16px}
+  .lead{margin:10px 0 12px;font-size:14px;font-weight:600}
+  .steps{list-style:none;margin:0;padding:0;counter-reset:s}
+  .steps li{position:relative;padding:8px 0 8px 34px;font-size:13.5px;color:#33405a;
+    border-top:1px dashed var(--line)}
+  .steps li:before{counter-increment:s;content:counter(s);position:absolute;left:0;top:8px;
+    width:22px;height:22px;border-radius:50%;background:#eef2fb;color:var(--brand);
+    font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center}
+  .target{padding:8px 0 0 34px;font-size:13.5px;color:var(--good);font-weight:700}
+
+  .clean{padding:22px;text-align:center;color:var(--good);font-weight:600;
+    border:1px solid #cde8d8;background:#f2fbf5;border-radius:10px}
+  .err{padding:14px 16px;color:#8a1f27;background:#fdecee;border:1px solid #f5c6cb;
+    border-radius:9px;font-size:14px}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .spinner{width:18px;height:18px;border:3px solid #cfe0ff;border-top-color:var(--brand);
+    border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:-3px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .hidden{display:none}
+  .pager{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:6px}
+  .pager span{font-size:13px;color:var(--muted);font-weight:600}
+  .pager button{background:var(--brand);color:#fff;border:0;border-radius:8px;
+    padding:9px 16px;font-size:13.5px;font-weight:600;cursor:pointer}
+  .pager button:hover{background:var(--brand-d)}
+  .pager button:disabled{opacity:.4;cursor:default}
+  button.scan.small{padding:9px 16px;font-size:13.5px;margin-top:8px}
+  .rsteps{margin-top:16px}
+  .rstep{display:flex;gap:14px;padding:14px 0;border-top:1px solid var(--line)}
+  .rnum{flex:none;width:28px;height:28px;border-radius:50%;background:var(--brand);color:#fff;
+    font-weight:700;display:flex;align-items:center;justify-content:center}
+  .rbody{font-size:14px;color:#33405a}
+  .rbody pre{background:#0f1420;color:#e6edf7;padding:10px 12px;border-radius:8px;
+    font-size:12.5px;overflow-x:auto;margin:8px 0 0}
+  .rstatus{font-size:13px;color:var(--muted);margin-left:10px}
+  .group{margin-top:18px}
+  .grouphead{font-size:14px;font-weight:700;margin:0 0 8px;padding:8px 12px;border-radius:8px}
+  .grouphead.gd{background:#f2fbf5;color:var(--good);border:1px solid #cde8d8}
+  .grouphead.gr{background:#fdecee;color:#8a1f27;border:1px solid #f5c6cb}
+  .grouphead.gi{background:#fff6ec;color:#a1560f;border:1px solid #f6d9b8}
+  .fixwrap{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}
+  .fixtitle{font-size:13px;font-weight:700;color:var(--ink)}
+  .fixnote{font-size:12px;color:var(--muted);margin:2px 0 10px}
+  .fixstep{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:8px;background:#fafbfe}
+  .fixstep.rec{border-color:#bcd3ff;background:#f2f7ff}
+  .fixtag{display:inline-block;font-size:11px;font-weight:700;color:#1f52c9;
+    background:#e0ebff;border-radius:12px;padding:2px 8px;margin-bottom:6px}
+  .fixactor{font-size:12px;color:var(--muted)}
+  .fixwhy{font-size:13px;margin:4px 0 2px}
+  .fixadv{font-size:13px;color:#33405a;margin:2px 0 6px}
+  .cmd{display:flex;align-items:center;gap:8px;background:#0f1420;border-radius:7px;
+    padding:7px 10px;margin-top:6px}
+  .cmd code{color:#e6edf7;font-size:12.5px;flex:1;overflow-x:auto;white-space:nowrap}
+  .cmd button{background:#2f6df6;color:#fff;border:0;border-radius:5px;padding:4px 10px;
+    font-size:12px;cursor:pointer;flex:none}
+  .cmd button:hover{background:#1f52c9}
+  details.fixdetails > summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--brand);
+    margin-top:12px;list-style:none}
+  details.fixdetails > summary::-webkit-details-marker{display:none}
+  details.fixdetails > summary:before{content:"▸ ";}
+  details.fixdetails[open] > summary:before{content:"▾ ";}
+  .fixopt{margin:6px 0 2px;padding:8px 10px;border-radius:7px;background:#f6f8fc}
+  .fixopt.primary{background:#eef6ef;border:1px solid #cde8d8}
+  .fixopthead{font-size:12.5px;font-weight:700;color:#33405a;margin-bottom:3px}
+  .fixopt.primary .fixopthead{color:#1f7a44}
+  .fixexample{background:#0f1420;color:#e6edf7;padding:9px 11px;border-radius:7px;
+    font-size:12px;overflow-x:auto;margin:6px 0 0;white-space:pre}
+</style>
+</head>
+<body>
+<header>
+  <h1>Kubernetes RBAC Attack-Path Analyzer</h1>
+  <p>Find and rank privilege-escalation paths in your cluster — before an attacker does.</p>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <div class="tabs">
+      <div class="tab active" id="tab-live" onclick="switchTab('live')">Live cluster</div>
+      <div class="tab" id="tab-file" onclick="switchTab('file')">Upload YAML</div>
+      <div class="tab" id="tab-rem" onclick="switchTab('rem')">Remediation check</div>
+    </div>
+
+    <!-- LIVE -->
+    <div id="pane-live">
+      <label>Choose a cluster (kubectl context)</label>
+      <select id="context"></select>
+      <div class="row">
+        <label class="chk"><input type="checkbox" id="inclsys"> Include built-in system accounts</label>
+      </div>
+      <div class="hint">Runs against the cluster your kubectl is connected to. Read-only.</div>
+    </div>
+
+    <!-- FILE -->
+    <div id="pane-file" class="hidden">
+      <label>Upload a Kubernetes RBAC YAML file</label>
+      <div class="drop" id="drop">
+        <div id="dropText">Drag a .yaml file here, or click to choose</div>
+        <input type="file" id="file" accept=".yaml,.yml" class="hidden" multiple>
+      </div>
+      <div class="hint">Works without a cluster — great for a quick check of a config file.</div>
+    </div>
+
+    <!-- REMEDIATION -->
+    <div id="pane-rem" class="hidden">
+      <label>Cluster to validate (kubectl context)</label>
+      <select id="rcontext"></select>
+      <div class="rsteps">
+        <div class="rstep">
+          <div class="rnum">1</div>
+          <div class="rbody">
+            <b>Capture a baseline</b> — scan the cluster as it is now.
+            <div><button class="scan small" id="baseBtn" onclick="captureBaseline()">Capture baseline</button>
+            <span id="baseStatus" class="rstatus"></span></div>
+          </div>
+        </div>
+        <div class="rstep">
+          <div class="rnum">2</div>
+          <div class="rbody">
+            <b>Apply your RBAC fix</b> in a terminal. Use the exact command
+            shown under “How to fix this” on the attack-path you want to close
+            (each finding gives the precise binding to fix for your cluster).
+            The general form is:
+            <pre>kubectl delete rolebinding &lt;binding-name&gt; -n &lt;namespace&gt;</pre>
+            <span class="rstatus">Or tighten the permission (e.g. scope it to a
+            single resource) instead of deleting it.</span>
+          </div>
+        </div>
+        <div class="rstep">
+          <div class="rnum">3</div>
+          <div class="rbody">
+            <b>Re-scan and compare</b> — see which attack paths the fix removed.
+            <div><button class="scan small" id="recheckBtn" onclick="reCheck()" disabled>Re-scan &amp; compare</button>
+            <span id="recheckStatus" class="rstatus"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:18px" id="mainScanRow">
+      <button class="scan" id="scanBtn" onclick="scan()">Scan for attack paths</button>
+      <span id="status"></span>
+    </div>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script>
+let mode = 'live';
+let chosenFiles = [];
+
+function switchTab(m){
+  mode = m;
+  document.getElementById('tab-live').classList.toggle('active', m==='live');
+  document.getElementById('tab-file').classList.toggle('active', m==='file');
+  document.getElementById('tab-rem').classList.toggle('active', m==='rem');
+  document.getElementById('pane-live').classList.toggle('hidden', m!=='live');
+  document.getElementById('pane-file').classList.toggle('hidden', m!=='file');
+  document.getElementById('pane-rem').classList.toggle('hidden', m!=='rem');
+  // The single Scan button is only for live/file modes; remediation has its own buttons.
+  document.getElementById('mainScanRow').classList.toggle('hidden', m==='rem');
+  document.getElementById('results').innerHTML = '';
+}
+
+// Load available clusters
+fetch('/api/contexts').then(r=>r.json()).then(d=>{
+  const sel = document.getElementById('context');
+  const rsel = document.getElementById('rcontext');
+  if(!d.contexts || d.contexts.length===0){
+    const why = d.error ? ` — ${d.error}` : '';
+    const opt = `<option value="">No clusters found${why}</option>`;
+    sel.innerHTML = opt;
+    if(rsel) rsel.innerHTML = opt;
+    return;
+  }
+  sel.innerHTML = d.contexts.map(c =>
+    `<option value="${c}" ${c===d.active?'selected':''}>${c}${c===d.active?'  (current)':''}</option>`
+  ).join('');
+  // Mirror the same options into the remediation dropdown.
+  if(rsel){ rsel.innerHTML = sel.innerHTML; }
+});
+
+// File drop handling
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('file');
+drop.onclick = ()=>fileInput.click();
+drop.ondragover = e=>{e.preventDefault();drop.classList.add('hover')};
+drop.ondragleave = ()=>drop.classList.remove('hover');
+drop.ondrop = e=>{e.preventDefault();drop.classList.remove('hover');setFiles(e.dataTransfer.files)};
+fileInput.onchange = ()=>setFiles(fileInput.files);
+function setFiles(fl){
+  chosenFiles = Array.from(fl);
+  document.getElementById('dropText').textContent =
+    chosenFiles.length ? chosenFiles.map(f=>f.name).join(', ') : 'Drag a .yaml file here, or click to choose';
+}
+
+function setBusy(b){
+  document.getElementById('scanBtn').disabled = b;
+  document.getElementById('status').innerHTML = b
+    ? '<span class="spinner"></span> scanning…' : '';
+}
+
+async function scan(){
+  setBusy(true);
+  document.getElementById('results').innerHTML = '';
+  try{
+    let res;
+    if(mode==='live'){
+      res = await fetch('/api/scan/live',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({context:document.getElementById('context').value,
+          include_system:document.getElementById('inclsys').checked})});
+    } else {
+      if(chosenFiles.length===0){ showError('Please choose a YAML file first.'); setBusy(false); return; }
+      const fd = new FormData();
+      chosenFiles.forEach(f=>fd.append('files', f));
+      res = await fetch('/api/scan/upload',{method:'POST',body:fd});
+    }
+    const data = await res.json();
+    if(!res.ok){ showError(data.error || 'Scan failed.'); }
+    else { render(data); }
+  }catch(e){ showError('Could not reach the analyzer: '+e.message); }
+  setBusy(false);
+}
+
+function showError(msg){
+  document.getElementById('results').innerHTML = `<div class="card"><div class="err">${msg}</div></div>`;
+}
+
+let pageState = { paths: [], page: 0, pageSize: 50, summaryHtml: '' };
+
+function render(d){
+  let summary = '<div class="card"><div class="summary">'
+    + stat(d.subjects,'identities analysed')
+    + stat(d.pods,'pods analysed')
+    + stat(d.paths.length,'attack paths')
+    + '</div>';
+  if(d.hidden>0){
+    summary += `<div class="hint">+${d.hidden} paths from built-in system accounts hidden. Tick “Include built-in system accounts” to show them.</div>`;
+  }
+  if(d.warning){
+    summary += `<div class="hint" style="color:#a1560f">${escapeHtml(d.warning)}</div>`;
+  }
+  summary += '</div>';
+
+  if(d.paths.length===0){
+    document.getElementById('results').innerHTML =
+      summary + '<div class="card"><div class="clean">✓ No attack paths to cluster-admin were found for your workloads.</div></div>';
+    return;
+  }
+
+  pageState = { paths: d.paths, page: 0, pageSize: 50, summaryHtml: summary };
+  renderResults();
+}
+
+function renderResults(){
+  const {paths, page, pageSize, summaryHtml} = pageState;
+  const total = paths.length;
+  const pages = Math.ceil(total / pageSize);
+  const start = page * pageSize;
+  const end = Math.min(start + pageSize, total);
+
+  let html = summaryHtml + '<div class="card">';
+  if(total > pageSize){
+    html += `<div class="hint" style="margin-bottom:8px">Showing paths ${start+1}–${end} of ${total}, ordered by risk (highest first).</div>`;
+  }
+  for(let i=start; i<end; i++){
+    html += pathCardHtml(paths[i], i);   // absolute index -> continuous numbering
+  }
+  html += '</div>';
+
+  if(pages > 1){
+    html += `<div class="pager">
+      <button ${page===0?'disabled':''} onclick="goPage(-1)">‹ Previous</button>
+      <span>Page ${page+1} of ${pages}</span>
+      <button ${page>=pages-1?'disabled':''} onclick="goPage(1)">Next ›</button>
+    </div>`;
+  }
+  document.getElementById('results').innerHTML = html;
+}
+
+function goPage(delta){
+  const pages = Math.ceil(pageState.paths.length / pageState.pageSize);
+  pageState.page = Math.min(Math.max(pageState.page + delta, 0), pages-1);
+  renderResults();
+  document.getElementById('results').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function pathCardHtml(p,i){
+  return `<div class="pathcard ${p.severity}">
+    <div class="pathhead">
+      <span class="badge ${p.severity}">${p.severity}</span>
+      <strong>Path #${i+1}</strong>
+      <span class="risk">risk <b>${p.risk}</b> &nbsp;·&nbsp; impact ${p.impact} / effort ${p.effort}</span>
+    </div>
+    <div class="lead">${short(p.entry)} can reach cluster-admin in ${p.hops} step${p.hops>1?'s':''}</div>
+    <ol class="steps">
+      ${p.steps.map(s=>`<li>${escapeHtml(s)}</li>`).join('')}
+    </ol>
+    <div class="target">✗ cluster-admin reached — full cluster takeover</div>
+    ${fixHtml(p.fixes)}
+  </div>`;
+}
+
+function fixHtml(fixes){
+  if(!fixes || !fixes.steps || fixes.steps.length===0) return '';
+  const rec = fixes.recommended;
+  let inner = '<div class="fixnote">Breaking any one step closes this entire path. For each step, the recommended fix keeps the workload working where possible; removal is offered as an alternative.</div>';
+  fixes.steps.forEach(s=>{
+    const isRec = s.index===rec;
+    inner += `<div class="fixstep ${isRec?'rec':''}">
+      ${isRec?'<span class="fixtag">RECOMMENDED · weakest link</span><br>':''}
+      <span class="fixactor">Step ${s.index+1} · ${escapeHtml(s.actor)}</span>
+      <div class="fixwhy">${escapeHtml(s.why)}</div>
+      ${fixOptionHtml(s.recommended, true)}
+      ${s.alternative ? fixOptionHtml(s.alternative, false) : ''}
+    </div>`;
+  });
+  return `<details class="fixdetails"><summary>How to fix this</summary>
+    <div class="fixwrap"><div class="fixtitle">Remediation</div>${inner}</div></details>`;
+}
+
+function fixOptionHtml(opt, primary){
+  if(!opt) return '';
+  let h = `<div class="fixopt ${primary?'primary':''}">
+    <div class="fixopthead">${primary?'✔ ':'○ '}${escapeHtml(opt.approach)}</div>
+    <div class="fixadv">${escapeHtml(opt.text)}</div>`;
+  if(opt.example){
+    h += `<pre class="fixexample">${escapeHtml(opt.example)}</pre>`;
+  }
+  (opt.commands||[]).forEach(c=>{ h += cmdHtml(c); });
+  h += `</div>`;
+  return h;
+}
+
+function cmdHtml(c){
+  return `<div class="cmd"><code>${escapeHtml(c)}</code>` +
+    `<button onclick="copyCmd(this)">Copy</button></div>`;
+}
+
+function copyCmd(btn){
+  const text = btn.previousElementSibling.textContent;
+  navigator.clipboard.writeText(text).then(()=>{
+    const old = btn.textContent; btn.textContent='Copied'; setTimeout(()=>btn.textContent=old,1200);
+  }).catch(()=>{ btn.textContent='Ctrl+C'; });
+}
+
+// ---- Remediation flow ----
+let baselinePaths = null;
+
+async function liveScan(contextId, includeSystem){
+  const res = await fetch('/api/scan/live',{method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({context:contextId, include_system:!!includeSystem})});
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error||'Scan failed');
+  return data;
+}
+
+async function captureBaseline(){
+  const ctx = document.getElementById('rcontext').value;
+  document.getElementById('baseStatus').innerHTML = '<span class="spinner"></span> scanning…';
+  document.getElementById('baseBtn').disabled = true;
+  try{
+    const data = await liveScan(ctx, false);
+    baselinePaths = data.paths;
+    document.getElementById('baseStatus').textContent =
+      `baseline captured: ${data.paths.length} attack path(s)`;
+    document.getElementById('recheckBtn').disabled = false;
+  }catch(e){
+    document.getElementById('baseStatus').textContent = 'error: '+e.message;
+  }
+  document.getElementById('baseBtn').disabled = false;
+}
+
+async function reCheck(){
+  if(!baselinePaths){ return; }
+  const ctx = document.getElementById('rcontext').value;
+  document.getElementById('recheckStatus').innerHTML = '<span class="spinner"></span> re-scanning…';
+  document.getElementById('recheckBtn').disabled = true;
+  try{
+    const after = await liveScan(ctx, false);
+    const res = await fetch('/api/compare',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({before:baselinePaths, after:after.paths})});
+    const diff = await res.json();
+    renderDiff(diff);
+    document.getElementById('recheckStatus').textContent = 'done';
+  }catch(e){
+    document.getElementById('recheckStatus').textContent = 'error: '+e.message;
+  }
+  document.getElementById('recheckBtn').disabled = false;
+}
+
+function renderDiff(diff){
+  const s = diff.summary;
+  let html = '<div class="card"><div class="summary">'
+    + stat(s.before,'paths before fix')
+    + stat(s.after,'paths after fix')
+    + stat(s.eliminated,'eliminated')
+    + stat(s.remaining,'still present')
+    + stat(s.introduced,'newly introduced')
+    + '</div>';
+
+  let verdict = '';
+  if(s.before>0 && s.after===0)
+    verdict = '✓ Fix fully effective — every attack path was eliminated.';
+  else if(s.eliminated>0 && s.remaining>0)
+    verdict = '⚠ Partial fix — some paths removed, but risks remain.';
+  else if(s.eliminated===0 && s.remaining>0)
+    verdict = '✗ Fix had no effect — the attack paths are still present.';
+  if(s.introduced>0) verdict += '  ⚠ Warning: the change created new attack path(s).';
+  if(verdict) html += `<div class="hint" style="font-size:14px;font-weight:600;margin-top:6px">${verdict}</div>`;
+  html += '</div>';
+
+  html += group('Eliminated (fixed)', 'gd', diff.eliminated);
+  html += group('Still present (not fixed)', 'gr', diff.remaining);
+  html += group('Newly introduced (regression)', 'gi', diff.introduced);
+  document.getElementById('results').innerHTML = html;
+}
+
+function group(title, cls, paths){
+  if(!paths || paths.length===0) return '';
+  let h = `<div class="card group"><div class="grouphead ${cls}">${title} — ${paths.length}</div>`;
+  paths.forEach((p,i)=>{ h += pathCardHtml(p,i); });
+  return h + '</div>';
+}
+
+function stat(n,label){ return `<div class="stat"><b>${n}</b>${label}</div>`; }
+function short(s){ return escapeHtml(s); }
+function escapeHtml(s){ return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+</script>
+</body>
+</html>

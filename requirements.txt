@@ -1,0 +1,9 @@
+# Core (needed for the YAML pipeline)
+PyYAML>=6.0
+networkx>=3.0
+
+# Web dashboard (python -m rbacgraph.web)
+Flask>=3.0
+
+# Live-cluster path (python -m rbacgraph.cli analyze --live, or the dashboard's Live tab)
+kubernetes>=29.0.0

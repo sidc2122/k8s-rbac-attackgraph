@@ -1,0 +1,95 @@
+# Partial fix: deployer loses workload-create. The 3-step path dies; the
+# direct 2-step path (frontend -> binder) still remains.
+# Deliberately vulnerable RBAC for testing.
+# Intended chain (what your tool should discover):
+#   frontend  --read secrets-->  steal binder's token
+#   binder    --create rolebindings-->  cluster-admin
+# Also a longer chain via 'deployer' (create workloads).
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend
+  namespace: app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: deployer
+  namespace: app
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: binder
+  namespace: app
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frontend
+  namespace: app
+spec:
+  serviceAccountName: frontend
+  containers:
+    - name: web
+      image: nginx
+---
+# frontend can read secrets in the 'app' namespace -> can steal other SA tokens
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-reader
+  namespace: app
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: frontend-secret-reader
+  namespace: app
+subjects:
+  - kind: ServiceAccount
+    name: frontend
+    namespace: app
+roleRef:
+  kind: Role
+  name: secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# deployer can create workloads -> can run a pod as any SA in the namespace
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: workload-creator
+  namespace: app
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["create"]
+---
+# binder can create rolebindings -> can grant itself cluster-admin
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: binding-manager
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["rolebindings", "clusterrolebindings"]
+    verbs: ["create", "bind"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: binder-binding-manager
+subjects:
+  - kind: ServiceAccount
+    name: binder
+    namespace: app
+roleRef:
+  kind: ClusterRole
+  name: binding-manager
+  apiGroup: rbac.authorization.k8s.io

@@ -1,0 +1,142 @@
+# Goat-style vulnerable RBAC scenarios, based on documented Kubernetes Goat
+# and OWASP K03 misconfigurations. Deployed into a throwaway cluster to
+# validate the analyser against realistic, third-party-style weaknesses.
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: goat
+---
+# Scenario A: an over-permissioned "build-robot" SA (classic Goat pattern):
+# a CI/build pod that can read all secrets in its namespace.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: build-robot
+  namespace: goat
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: build-agent
+  namespace: goat
+spec:
+  serviceAccountName: build-robot
+  containers:
+    - name: agent
+      image: build-agent
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-access
+  namespace: goat
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: build-robot-secret-access
+  namespace: goat
+subjects:
+  - kind: ServiceAccount
+    name: build-robot
+    namespace: goat
+roleRef:
+  kind: Role
+  name: secret-access
+  apiGroup: rbac.authorization.k8s.io
+---
+# Scenario B: a "deployer" SA that can create workloads (pod-create escalation).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: ci-deployer
+  namespace: goat
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: deploy-role
+  namespace: goat
+rules:
+  - apiGroups: ["apps", ""]
+    resources: ["deployments", "pods"]
+    verbs: ["create", "get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: ci-deployer-deploy
+  namespace: goat
+subjects:
+  - kind: ServiceAccount
+    name: ci-deployer
+    namespace: goat
+roleRef:
+  kind: Role
+  name: deploy-role
+  apiGroup: rbac.authorization.k8s.io
+---
+# Scenario C: an operator SA that can manage RBAC bindings (cluster takeover).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: platform-operator
+  namespace: goat
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rbac-operator
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["clusterrolebindings", "rolebindings"]
+    verbs: ["create", "bind"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: platform-operator-rbac
+subjects:
+  - kind: ServiceAccount
+    name: platform-operator
+    namespace: goat
+roleRef:
+  kind: ClusterRole
+  name: rbac-operator
+  apiGroup: rbac.authorization.k8s.io
+---
+# Scenario D: the classic Goat/OWASP mistake - default SA bound to cluster-admin.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: goat
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: metadata-db
+  namespace: goat
+spec:
+  serviceAccountName: default
+  containers:
+    - name: db
+      image: metadata-db
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: goat-default-admin
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: goat
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin
+  apiGroup: rbac.authorization.k8s.io

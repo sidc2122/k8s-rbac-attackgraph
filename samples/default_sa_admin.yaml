@@ -1,0 +1,34 @@
+# The single most common real-world RBAC mistake (OWASP K03):
+# the 'default' ServiceAccount in a namespace is bound to cluster-admin.
+# Every pod using that SA is therefore one compromise away from owning the
+# cluster. Your tool should flag this as CRITICAL in a single step.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: default
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: web-ui
+  namespace: default
+spec:
+  serviceAccountName: default
+  containers:
+    - name: app
+      image: some-web-app
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dangerous-default-admin
+subjects:
+  - kind: ServiceAccount
+    name: default
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: cluster-admin           # built-in wildcard role
+  apiGroup: rbac.authorization.k8s.io

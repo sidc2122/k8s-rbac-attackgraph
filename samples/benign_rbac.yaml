@@ -1,0 +1,43 @@
+# A tight, least-privilege config: no path to cluster-admin should be found.
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: frontend
+  namespace: app
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: frontend
+  namespace: app
+spec:
+  serviceAccountName: frontend
+  containers:
+    - name: web
+      image: nginx
+---
+# frontend can only read configmaps in its own namespace. Nothing chainable.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: configmap-reader
+  namespace: app
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: frontend-configmap-reader
+  namespace: app
+subjects:
+  - kind: ServiceAccount
+    name: frontend
+    namespace: app
+roleRef:
+  kind: Role
+  name: configmap-reader
+  apiGroup: rbac.authorization.k8s.io
