@@ -38,6 +38,17 @@ class TestWebEndpoints(unittest.TestCase):
                         content_type="multipart/form-data")
         self.assertEqual(r.status_code, 400)
 
+    def test_builtin_example_scan(self):
+        names = [s["name"] for s in self.c.get("/api/samples").get_json()]
+        self.assertIn("vulnerable_rbac.yaml", names)
+        r = self.c.post("/api/scan/sample", json={"name": "vulnerable_rbac.yaml"})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(r.get_json()["paths"]), 2)
+
+    def test_builtin_example_rejects_unknown_name(self):
+        r = self.c.post("/api/scan/sample", json={"name": "../requirements.txt"})
+        self.assertEqual(r.status_code, 400)
+
     def test_compare_endpoint(self):
         before = service.scan_yaml([sample("vulnerable_rbac.yaml")])["paths"]
         after = service.scan_yaml([sample("fix_full_rbac.yaml")])["paths"]

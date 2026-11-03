@@ -72,6 +72,12 @@
   .err{padding:14px 16px;color:#8a1f27;background:#fdecee;border:1px solid #f5c6cb;
     border-radius:9px;font-size:14px}
   .hint{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .examples{margin-top:18px}
+  #exampleBtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+  .exbtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:8px 12px;
+    font:inherit;font-size:13.5px;cursor:pointer;color:inherit}
+  .exbtn:hover{border-color:var(--brand);color:var(--brand);background:#eef4ff}
+  .exbtn:disabled{opacity:.5;cursor:default}
   .spinner{width:18px;height:18px;border:3px solid #cfe0ff;border-top-color:var(--brand);
     border-radius:50%;display:inline-block;animation:spin .8s linear infinite;vertical-align:-3px}
   @keyframes spin{to{transform:rotate(360deg)}}
@@ -157,6 +163,10 @@
         <input type="file" id="file" accept=".yaml,.yml" class="hidden" multiple>
       </div>
       <div class="hint">Works without a cluster — great for a quick check of a config file.</div>
+      <div class="examples">
+        <label>No file? Try a built-in example (one click):</label>
+        <div id="exampleBtns"></div>
+      </div>
     </div>
 
     <!-- REMEDIATION -->
@@ -230,6 +240,9 @@ fetch('/api/contexts').then(r=>r.json()).then(d=>{
     const opt = `<option value="">No clusters found${why}</option>`;
     sel.innerHTML = opt;
     if(rsel) rsel.innerHTML = opt;
+    // No cluster available (e.g. a first-time visitor): open the YAML tab
+    // with its built-in examples instead of an empty cluster list.
+    if(mode==='live') switchTab('file');
     return;
   }
   sel.innerHTML = d.contexts.map(c =>
@@ -279,6 +292,30 @@ async function scan(){
     else { render(data); }
   }catch(e){ showError('Could not reach the analyzer: '+e.message); }
   setBusy(false);
+}
+
+// Built-in examples: scan a bundled sample file with one click.
+fetch('/api/samples').then(r=>r.json()).then(list=>{
+  document.getElementById('exampleBtns').innerHTML = list.map(s =>
+    `<button class="exbtn" onclick="scanSample('${s.name}', this)">${s.label}</button>`
+  ).join('');
+});
+
+async function scanSample(name, btn){
+  const btns = document.querySelectorAll('.exbtn');
+  btns.forEach(b=>b.disabled=true);
+  setBusy(true);
+  document.getElementById('dropText').textContent = name;
+  document.getElementById('results').innerHTML = '';
+  try{
+    const res = await fetch('/api/scan/sample',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name})});
+    const data = await res.json();
+    if(!res.ok){ showError(data.error || 'Scan failed.'); }
+    else { render(data); document.getElementById('results').scrollIntoView({behavior:'smooth'}); }
+  }catch(e){ showError('Could not reach the analyzer: '+e.message); }
+  setBusy(false);
+  btns.forEach(b=>b.disabled=false);
 }
 
 function showError(msg){

@@ -72,6 +72,35 @@ def scan_upload():
         return jsonify({"error": f"Could not analyse the file: {exc}"}), 400
 
 
+# Built-in example manifests, so visitors can try the tool without a file of
+# their own. Only names in this list can be scanned (no arbitrary paths).
+SAMPLES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "samples")
+SAMPLES = [
+    ("vulnerable_rbac.yaml", "Vulnerable cluster (2 attack paths)"),
+    ("default_sa_admin.yaml", "Default account is cluster-admin"),
+    ("goat_rbac.yaml", "Kubernetes Goat-style scenarios"),
+    ("fix_partial_rbac.yaml", "After a partial fix"),
+    ("benign_rbac.yaml", "Safe, least-privilege cluster"),
+]
+
+
+@app.route("/api/samples")
+def samples():
+    return jsonify([{"name": n, "label": l} for n, l in SAMPLES])
+
+
+@app.route("/api/scan/sample", methods=["POST"])
+def scan_sample():
+    data = request.get_json(force=True, silent=True) or {}
+    name = data.get("name")
+    if name not in dict(SAMPLES):
+        return jsonify({"error": "Unknown example."}), 400
+    try:
+        return jsonify(service.scan_yaml([os.path.join(SAMPLES_DIR, name)]))
+    except Exception as exc:
+        return jsonify({"error": f"Could not analyse the example: {exc}"}), 400
+
+
 @app.route("/api/compare", methods=["POST"])
 def compare():
     data = request.get_json(force=True, silent=True) or {}
