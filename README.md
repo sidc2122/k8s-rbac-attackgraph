@@ -10,6 +10,8 @@ local machine — cluster credentials never leave it.
 
 > MSc project · Python (NetworkX, Flask, Kubernetes client) · 45 automated tests
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/sidc2122/k8s-rbac-attackgraph)
+
 ![Dashboard showing two ranked attack paths to cluster-admin](docs/dashboard.png)
 
 ## Try it in 2 minutes (no Kubernetes cluster needed)
